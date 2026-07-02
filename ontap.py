@@ -6,24 +6,40 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. CẤU HÌNH GIAO DIỆN VÀ CSS THU GỌN ---
-st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="Phần mềm ôn thi Cam Ranh", page_icon="✈️", layout="wide")
 
 st.markdown("""
     <style>
-    /* Tăng cỡ chữ của radio button (đáp án) */
-    div[role="radiogroup"] label p {
-        font-size: 18px !important;
+    /* 1. TÙY CHỈNH KHU VỰC LÀM BÀI CHÍNH (MAIN) */
+    section[data-testid="stMain"] div[role="radiogroup"] label p {
+        font-size: 17px !important; /* Cỡ chữ đáp án vừa vặn, không quá to */
         font-weight: 500;
     }
-    /* Thu hẹp khoảng cách giữa các câu và các thành phần */
-    .stMarkdown, .stRadio {
+    section[data-testid="stMain"] .stMarkdown, section[data-testid="stMain"] .stRadio {
         margin-bottom: -10px !important;
     }
-    /* Giảm khoảng cách giữa câu hỏi và đáp án */
-    div[data-testid="stMarkdownContainer"] {
+    section[data-testid="stMain"] div[data-testid="stMarkdownContainer"] {
         margin-bottom: 5px !important;
     }
-    /* Thu gọn khoảng cách giữa các khối câu hỏi */
+
+    /* 2. TÙY CHỈNH KHU VỰC MENU TRÁI (SIDEBAR) ĐỂ SIÊU GỌN GÀNG */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label p {
+        font-size: 14px !important; /* Thu nhỏ cỡ chữ nút chọn Mode */
+    }
+    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        font-size: 14px !important; /* Thu nhỏ chữ trong hộp selectbox */
+    }
+    section[data-testid="stSidebar"] h1 {
+        font-size: 20px !important;
+        padding-bottom: 0px !important;
+    }
+    section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 {
+        font-size: 16px !important;
+        padding-bottom: 0px !important;
+        margin-bottom: -10px !important;
+    }
+
+    /* 3. THU GỌN ĐƯỜNG KẺ CHUNG */
     hr {
         margin-top: 10px !important;
         margin-bottom: 10px !important;
@@ -60,7 +76,6 @@ def init_states():
     if 'fc_choice' not in st.session_state: st.session_state.fc_choice = None
     if 'fc_incorrect' not in st.session_state: st.session_state.fc_incorrect = []
     if 'fc_is_retry' not in st.session_state: st.session_state.fc_is_retry = False
-    # Bộ nhớ lưu lại các đáp án người dùng đã bấm ở chế độ Flashcard để phục vụ tính năng Back
     if 'fc_history_choices' not in st.session_state: st.session_state.fc_history_choices = {}
 
     # Mock Test State
@@ -100,7 +115,6 @@ def save_fc_progress():
         "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
         "currentQ": st.session_state.fc_current, "score": st.session_state.fc_score, "incorrect": err_str
     }
-    # Đẩy tác vụ gửi request sang luồng ngầm xử lý độc lập
     st.session_state.executor.submit(_async_post_request, API_URL, payload)
 
 def save_mt_progress():
@@ -364,7 +378,6 @@ else:
             st.markdown(f"### {row.get('Nội dung câu hỏi (*)', 'Lỗi nội dung')}")
             options, correct_ans = get_options_and_correct(row, df.columns)
             
-            # Kiểm tra xem câu hiện tại đã từng được trả lời hay chưa (Dùng cho tính năng Back câu hỏi cũ)
             has_history = real_idx in st.session_state.fc_history_choices
             current_index = None
             
@@ -384,14 +397,11 @@ else:
             
             st.write("---")
             
-            # --- KHU VỰC ĐIỀU HƯỚNG NÚT BẤM (BACK - ĐÁP ÁN - NEXT) ---
             col_b1, col_b2, col_b3 = st.columns([1, 1, 4])
             
-            # Nút Back luôn hiển thị nếu vị trí > 0
             if st.session_state.fc_current > 0:
                 if col_b1.button("⬅️ Back"):
                     st.session_state.fc_current -= 1
-                    # Khi quay lại câu cũ, đưa trạng thái về đã xem lịch sử đáp án
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
                     st.rerun()
@@ -410,8 +420,6 @@ else:
                         else:
                             if real_idx not in st.session_state.fc_incorrect:
                                 st.session_state.fc_incorrect.append(real_idx)
-                        
-                        # Khắc phục nhược điểm: Lưu tiến độ lên Cloud ngay tại đây
                         save_fc_progress() 
                         st.rerun()
             else:
@@ -419,11 +427,9 @@ else:
                     st.session_state.fc_current += 1
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
-                    # Đồng bộ ngầm việc nhảy chỉ mục câu hỏi
                     save_fc_progress() 
                     st.rerun()
                     
-            # Hiển thị vùng thông báo kết quả Đúng/Sai sau khi kiểm tra hoặc khi xem lại lịch sử
             if st.session_state.fc_answered or has_history:
                 active_choice = st.session_state.fc_choice if st.session_state.fc_answered else st.session_state.fc_history_choices[real_idx]
                 if active_choice == correct_ans:
@@ -433,7 +439,7 @@ else:
                     st.info(f"💡 **Đáp án đúng là:** {correct_ans}")
 
     # ==========================================
-    # HÌNH THỨC 2: THI THỬ 50 CÂU (LƯU VỊ TRÍ)
+    # HÌNH THỨC 2: THI THỬ 50 CÂU
     # ==========================================
     elif mode.startswith("2"):
         st.caption(f"Học viên: **{st.session_state.user_name}** | Chế độ: Thi thử (Hệ thống tự lưu đáp án khi bạn chọn)")
