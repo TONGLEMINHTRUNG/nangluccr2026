@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import requests
+import threading
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
@@ -52,6 +53,13 @@ def fetch_progress_from_db(user, quiz):
         st.session_state.sync_error = True
     return None
 
+def background_save(payload):
+    """Hàm chạy ngầm gửi dữ liệu lên Google Sheets để không làm lag app"""
+    try:
+        requests.post(API_URL, json=payload, timeout=5)
+    except:
+        pass
+
 def save_progress_to_db():
     if not API_URL or "DÁN_LINK" in API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: 
         return
@@ -67,9 +75,10 @@ def save_progress_to_db():
             "score": st.session_state.fc_score,
             "incorrect": err_str
         }
-        requests.post(API_URL, json=payload, timeout=5)
+        # Kích hoạt tiểu trình (thread) chạy ngầm để lưu dữ liệu
+        threading.Thread(target=background_save, args=(payload,)).start()
     except:
-        st.session_state.sync_error = True
+        pass # Không làm phiền người dùng nếu lỗi ngầm
 
 def reset_flashcard(df):
     st.session_state.fc_queue = list(range(len(df)))
@@ -94,7 +103,6 @@ def retry_wrong_flashcards():
 def reset_mock_test(df):
     total_q = len(df)
     
-    # Nếu ngân hàng có ít hơn 50 câu, lấy tất cả và xáo trộn
     if total_q < 50:
         indices = list(range(total_q))
         random.shuffle(indices)
@@ -103,22 +111,16 @@ def reset_mock_test(df):
         indices = []
         num_parts = 10
         q_per_part = 5
-        
-        # Tính kích thước mỗi phần
         part_size = total_q // num_parts
         
         for i in range(num_parts):
             start_idx = i * part_size
-            # Phần cuối cùng sẽ lấy nốt số câu lẻ còn dư
             end_idx = total_q if i == num_parts - 1 else (i + 1) * part_size
-            
-            # Lấy ngẫu nhiên đúng 5 câu trong khoảng của part này
             part_indices = list(range(start_idx, end_idx))
-            k = min(q_per_part, len(part_indices)) # Đảm bảo an toàn nếu part nhỏ hơn 5
+            k = min(q_per_part, len(part_indices)) 
             sampled = random.sample(part_indices, k)
             indices.extend(sampled)
             
-        # Xáo trộn lại toàn bộ 50 câu để đề thi không xếp theo thứ tự part
         random.shuffle(indices)
         st.session_state.mt_indices = indices
         
@@ -174,7 +176,6 @@ if st.session_state.user_name == "":
     st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
     st.subheader("Hệ thống tự động đồng bộ đám mây")
     
-    # LỜI NHẮN NHỦ GIAO LƯU ĐƯỢC THÊM VÀO ĐÂY
     st.info("💡 **Nếu bạn thấy phần mềm hữu ích nhớ mời CB uống ROOT ROOT nhé! 🍺**")
     
     with st.form("identity_form"):
