@@ -12,9 +12,9 @@ API_URL = st.secrets.get("API_URL", "")
 
 # --- 2. KHAI BÁO LINK DỮ LIỆU ---
 SHEET_URLS = {
-    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
+    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
     "Bài thi LTC-APP": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=272921330&single=true&output=tsv",
-    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
+    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
 }
 
 # --- 3. QUẢN LÝ TRẠNG THÁI ---
@@ -171,7 +171,7 @@ if st.session_state.user_name == "":
     st.subheader("Hệ thống tự động đồng bộ đám mây")
     
     with st.form("identity_form"):
-        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ (Ví dụ: TrungCB):")
+        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ:")
         submit_identity = st.form_submit_button("Vào ôn luyện 🚀")
         if submit_identity:
             if name_input.strip() == "":
@@ -246,7 +246,6 @@ with st.sidebar:
             else: reset_mock_test(df)
             st.rerun()
             
-    # THÊM "TIỀN BẢN QUYỀN" Ở ĐÂY NÀY!
     st.write("---")
     st.markdown("<p style='text-align: center; color: #888; font-style: italic; font-size: 14px;'>💡 Nếu thấy hữu ích nhớ mời CB uống ROOT ROOT 🍺</p>", unsafe_allow_html=True)
 
