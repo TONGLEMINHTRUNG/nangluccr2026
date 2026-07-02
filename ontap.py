@@ -12,9 +12,9 @@ API_URL = st.secrets.get("API_URL", "")
 
 # --- 2. KHAI BÁO LINK DỮ LIỆU ---
 SHEET_URLS = {
-    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
+    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
     "Bài thi LTC-APP": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=272921330&single=true&output=tsv",
-    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
+    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
 }
 
 # --- 3. QUẢN LÝ TRẠNG THÁI ---
@@ -93,7 +93,6 @@ def save_mt_history(score, total):
         requests.post(API_URL, json=payload, timeout=5)
     except: pass
 
-# Hàm Callback bắt sự kiện người dùng chọn đáp án thi thử
 def on_mt_answer_change(idx_str):
     selected_val = st.session_state[f"mt_radio_{idx_str}"]
     st.session_state.mt_answers[idx_str] = selected_val
@@ -181,6 +180,8 @@ if st.session_state.user_name == "":
                 st.session_state.user_name = name_input.strip()
                 st.session_state.db_loaded = False
                 st.rerun()
+    
+    st.markdown("<br><hr><p style='text-align: center; color: gray; font-style: italic;'>💡 Nếu thấy hữu ích nhớ mời CB uống ROOT ROOT 🍺</p>", unsafe_allow_html=True)
     st.stop()
 
 # --- 6. GIAO DIỆN MENU CÀI ĐẶT ---
@@ -214,13 +215,11 @@ with st.sidebar:
             progress = fetch_progress_from_db(st.session_state.user_name, selected_sheet)
             
             if progress and progress.get("status") == "found":
-                # Nạp Flashcard
                 st.session_state.fc_current = min(int(progress.get("fc_currentQ", 0)), len(df) - 1)
                 st.session_state.fc_score = int(progress.get("fc_score", 0))
                 inc_str = progress.get("fc_incorrect", "")
                 st.session_state.fc_incorrect = [int(x) for x in inc_str.split(",") if x]
                 
-                # Nạp Thi Thử
                 mt_idx_str = progress.get("mt_indices", "")
                 mt_ans_str = progress.get("mt_answers", "{}")
                 mt_sub_str = str(progress.get("mt_submitted", "False"))
@@ -232,7 +231,6 @@ with st.sidebar:
                 else:
                     reset_mock_test(df)
             else:
-                # Khởi tạo mặc định nếu chưa có Data
                 st.session_state.fc_current = 0
                 st.session_state.fc_score = 0
                 st.session_state.fc_incorrect = []
@@ -247,6 +245,10 @@ with st.sidebar:
             if mode.startswith("1"): reset_flashcard(df)
             else: reset_mock_test(df)
             st.rerun()
+            
+    # THÊM "TIỀN BẢN QUYỀN" Ở ĐÂY NÀY!
+    st.write("---")
+    st.markdown("<p style='text-align: center; color: #888; font-style: italic; font-size: 14px;'>💡 Nếu thấy hữu ích nhớ mời CB uống ROOT ROOT 🍺</p>", unsafe_allow_html=True)
 
 # --- 7. KHU VỰC HIỂN THỊ CHÍNH ---
 st.title("✈️ Hệ Thống Ôn Tập Trắc Nghiệm")
@@ -381,7 +383,6 @@ else:
             st.progress(answered_count / len(st.session_state.mt_indices))
             st.write(f"✅ Đã làm: **{answered_count} / {len(st.session_state.mt_indices)}** câu")
             
-            # Giao diện câu hỏi tự động lưu không cần Nút
             for i, idx in enumerate(st.session_state.mt_indices):
                 idx_str = str(idx)
                 row = df.iloc[idx]
@@ -404,7 +405,7 @@ else:
             st.warning("⚠️ Nhớ kiểm tra kỹ đáp án trước khi bấm Nộp bài nhé!")
             if st.button("NỘP BÀI & CHẤM ĐIỂM ✅"):
                 st.session_state.mt_submitted = True
-                save_mt_progress() # Cập nhật trạng thái đã nộp
+                save_mt_progress()
                 st.rerun()
                 
         else:
@@ -428,7 +429,6 @@ else:
                 
                 results_ui.append(ui_block)
 
-            # Đẩy dữ liệu lịch sử lên Google Sheet
             save_mt_history(score, len(st.session_state.mt_indices))
 
             st.success(f"### 🏆 Điểm số của {st.session_state.user_name}: {score} / {len(st.session_state.mt_indices)}")
