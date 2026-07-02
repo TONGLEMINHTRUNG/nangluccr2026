@@ -300,7 +300,7 @@ with st.sidebar:
             
     st.divider()
     if not mode.startswith("3"):
-        if st.button("🗑️ Xóa tiến độ - Làm lại bài này"):
+        if st.button("🗑️ Reset profile"):
             if mode.startswith("1"): reset_flashcard(df)
             else: reset_mock_test(df)
             st.rerun()
