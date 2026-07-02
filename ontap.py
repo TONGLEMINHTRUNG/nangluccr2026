@@ -3,6 +3,48 @@ import pandas as pd
 import random
 import requests
 import json
+from concurrent.futures import ThreadPoolExecutor
+
+# --- CẤU HÌNH ĐA LUỒNG ĐỂ TỐI ƯU TỐC ĐỘ ---
+# Tạo một worker pool để xử lý các yêu cầu HTTP dưới nền
+executor = ThreadPoolExecutor(max_workers=2)
+
+# --- Các hàm lưu dữ liệu dưới nền (Background) ---
+def _perform_request(url, payload):
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except: pass
+
+def save_fc_progress():
+    if not API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: return
+    err_str = ",".join(map(str, st.session_state.fc_incorrect))
+    payload = {
+        "action": "save_progress", "mode": "flashcard",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "currentQ": st.session_state.fc_current, "score": st.session_state.fc_score, "incorrect": err_str
+    }
+    # Chạy ngầm, UI không bị block
+    executor.submit(_perform_request, API_URL, payload)
+
+def save_mt_progress():
+    if not API_URL or st.session_state.user_name == "" or st.session_state.mt_submitted: return
+    payload = {
+        "action": "save_progress", "mode": "mocktest",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "mt_indices": json.dumps(st.session_state.mt_indices),
+        "mt_answers": json.dumps(st.session_state.mt_answers),
+        "mt_submitted": st.session_state.mt_submitted
+    }
+    executor.submit(_perform_request, API_URL, payload)
+
+def save_mt_history(score, total):
+    if not API_URL or st.session_state.user_name == "": return
+    payload = {
+        "action": "save_history",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "score": score, "total": total
+    }
+    executor.submit(_perform_request, API_URL, payload)
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
