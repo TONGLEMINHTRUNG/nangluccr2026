@@ -6,7 +6,7 @@ import requests
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
-# LINK GOOGLE APPS SCRIPT ĐÃ ĐƯỢC GẮN CHUẨN XÁC
+# LINK GOOGLE APPS SCRIPT
 API_URL = "https://script.google.com/macros/s/AKfycbyZANZPy6zjVpaLcvUsn-fYPntNlHLsTVVZUD7nd5mAKkRp9kfV4DantgZ0PpKjRHCp/exec"
 
 # --- 2. KHAI BÁO LINK DỮ LIỆU CÂU HỎI TSV ---
@@ -58,7 +58,6 @@ def save_progress_to_db():
     try:
         err_str = ",".join(map(str, st.session_state.fc_incorrect))
         
-        # LOGIC MỚI: Nếu câu hỏi đã được bấm "Kiểm tra kết quả", ngầm lưu vị trí là câu tiếp theo (+1)
         saved_current_q = st.session_state.fc_current + 1 if st.session_state.fc_answered else st.session_state.fc_current
         
         payload = {
@@ -91,9 +90,38 @@ def retry_wrong_flashcards():
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = True
 
+# --- THUẬT TOÁN TẠO ĐỀ THI 50 CÂU PHÂN BỔ ĐỀU ---
 def reset_mock_test(df):
-    k = min(50, len(df))
-    st.session_state.mt_indices = random.sample(list(range(len(df))), k)
+    total_q = len(df)
+    
+    # Nếu ngân hàng có ít hơn 50 câu, lấy tất cả và xáo trộn
+    if total_q < 50:
+        indices = list(range(total_q))
+        random.shuffle(indices)
+        st.session_state.mt_indices = indices
+    else:
+        indices = []
+        num_parts = 10
+        q_per_part = 5
+        
+        # Tính kích thước mỗi phần
+        part_size = total_q // num_parts
+        
+        for i in range(num_parts):
+            start_idx = i * part_size
+            # Phần cuối cùng sẽ lấy nốt số câu lẻ còn dư
+            end_idx = total_q if i == num_parts - 1 else (i + 1) * part_size
+            
+            # Lấy ngẫu nhiên đúng 5 câu trong khoảng của part này
+            part_indices = list(range(start_idx, end_idx))
+            k = min(q_per_part, len(part_indices)) # Đảm bảo an toàn nếu part nhỏ hơn 5
+            sampled = random.sample(part_indices, k)
+            indices.extend(sampled)
+            
+        # Xáo trộn lại toàn bộ 50 câu để đề thi không xếp theo thứ tự part
+        random.shuffle(indices)
+        st.session_state.mt_indices = indices
+        
     st.session_state.mt_submitted = False
     st.session_state.mt_answers = {}
 
@@ -145,6 +173,9 @@ def get_options_and_correct(row, df_columns):
 if st.session_state.user_name == "":
     st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
     st.subheader("Hệ thống tự động đồng bộ đám mây")
+    
+    # LỜI NHẮN NHỦ GIAO LƯU ĐƯỢC THÊM VÀO ĐÂY
+    st.info("💡 **Nếu bạn thấy phần mềm hữu ích nhớ mời CB uống ROOT ROOT nhé! 🍺**")
     
     with st.form("identity_form"):
         name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ:")
@@ -211,7 +242,6 @@ with st.sidebar:
 # --- 7. KHU VỰC HIỂN THỊ CHÍNH ---
 st.title("✈️ Hệ Thống Ôn Tập Trắc Nghiệm")
 
-# HIỂN THỊ CẢNH BÁO NẾU LỖI ĐỒNG BỘ
 if st.session_state.sync_error:
     st.error("⚠️ Lỗi kết nối Đồng bộ: Không thể lưu tiến độ lúc này.")
 
@@ -315,7 +345,7 @@ else:
     # HÌNH THỨC 2: THI THỬ 50 CÂU
     # ==========================================
     elif mode.startswith("2"):
-        st.caption(f"Học viên: **{st.session_state.user_name}** | Chế độ: Thi thử ngẫu nhiên")
+        st.caption(f"Học viên: **{st.session_state.user_name}** | Chế độ: Thi thử 50 câu (Phân bổ đều)")
         
         if not st.session_state.mt_submitted:
             with st.form("mock_test_form"):
