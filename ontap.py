@@ -12,27 +12,34 @@ SHEET_URLS = {
     "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
 }
 
-# --- 3. QUẢN LÝ TRẠNG THÁI (SESSION STATE) ---
+# --- 3. QUẢN LÝ TRẠNG THÁI & URL ---
 def init_states():
-    # Biến kiểm soát thay đổi menu
+    # Đọc tiến độ từ thanh địa chỉ (URL) nếu có
+    url_q = int(st.query_params.get("q", 0))
+    url_score = int(st.query_params.get("score", 0))
+
     if 'prev_sheet' not in st.session_state: st.session_state.prev_sheet = ""
     if 'prev_mode' not in st.session_state: st.session_state.prev_mode = ""
     
-    # Biến cho Hình thức 1: Flashcard
+    # Khởi tạo dữ liệu Flashcard bằng tiến độ lấy từ URL
     if 'fc_queue' not in st.session_state: st.session_state.fc_queue = []
-    if 'fc_current' not in st.session_state: st.session_state.fc_current = 0
-    if 'fc_score' not in st.session_state: st.session_state.fc_score = 0
+    if 'fc_current' not in st.session_state: st.session_state.fc_current = url_q
+    if 'fc_score' not in st.session_state: st.session_state.fc_score = url_score
     if 'fc_answered' not in st.session_state: st.session_state.fc_answered = False
     if 'fc_choice' not in st.session_state: st.session_state.fc_choice = None
     if 'fc_incorrect' not in st.session_state: st.session_state.fc_incorrect = []
     if 'fc_is_retry' not in st.session_state: st.session_state.fc_is_retry = False
 
-    # Biến cho Hình thức 2: Thi thử 50 câu
     if 'mt_indices' not in st.session_state: st.session_state.mt_indices = []
     if 'mt_submitted' not in st.session_state: st.session_state.mt_submitted = False
     if 'mt_answers' not in st.session_state: st.session_state.mt_answers = {}
 
 init_states()
+
+# Hàm đồng bộ tiến độ hiện tại ngược lên URL
+def update_url():
+    st.query_params["q"] = st.session_state.fc_current
+    st.query_params["score"] = st.session_state.fc_score
 
 def reset_flashcard(df):
     st.session_state.fc_queue = list(range(len(df)))
@@ -42,6 +49,7 @@ def reset_flashcard(df):
     st.session_state.fc_choice = None
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = False
+    update_url()
 
 def retry_wrong_flashcards():
     st.session_state.fc_queue = st.session_state.fc_incorrect.copy()
@@ -51,9 +59,9 @@ def retry_wrong_flashcards():
     st.session_state.fc_choice = None
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = True
+    update_url()
 
 def reset_mock_test(df):
-    # Lấy ngẫu nhiên 50 câu, nếu ngân hàng có ít hơn 50 thì lấy tất cả
     k = min(50, len(df))
     st.session_state.mt_indices = random.sample(list(range(len(df))), k)
     st.session_state.mt_submitted = False
@@ -61,7 +69,7 @@ def reset_mock_test(df):
 
 # --- 4. TẢI DỮ LIỆU ---
 @st.cache_data(ttl=600) 
-def load_data(url):
+def load_data(url, sheet_name):
     df_raw = pd.read_csv(url, sep='\t', header=None, dtype=str)
     header_row_idx = 0
     for i, row in df_raw.iterrows():
@@ -79,7 +87,6 @@ def load_data(url):
         df = df[df['Nội dung câu hỏi (*)'].str.strip() != '']
     return df
 
-# Hàm phụ trợ trích xuất câu trả lời chuẩn xác
 def get_options_and_correct(row, df_columns):
     labels = ['A', 'B', 'C', 'D']
     option_cols = ['Phương án lựa chọn 1', 'Phương án lựa chọn 2', 'Phương án lựa chọn 3', 'Phương án lựa chọn 4']
@@ -103,23 +110,37 @@ def get_options_and_correct(row, df_columns):
         correct_full_text = f"Đáp án số {correct_idx_str} (Dữ liệu bị thiếu)"
     return options_to_display, correct_full_text
 
-
-# --- 5. GIAO DIỆN MENU BÊN TRÁI (SIDEBAR) ---
+# --- 5. GIAO DIỆN MENU BÊN TRÁI ---
 with st.sidebar:
     st.title("⚙️ Cài đặt")
-    selected_sheet = st.selectbox("📌 Chọn bài thi:", list(SHEET_URLS.keys()))
+    
+    # Đồng bộ lựa chọn Sheet với URL để khi reload không bị nhảy về sheet đầu tiên
+    url_sheet = st.query_params.get("sheet", list(SHEET_URLS.keys())[0])
+    try:
+        default_idx = list(SHEET_URLS.keys()).index(url_sheet)
+    except ValueError:
+        default_idx = 0
+        
+    selected_sheet = st.selectbox("📌 Chọn bài thi:", list(SHEET_URLS.keys()), index=default_idx)
+    st.query_params["sheet"] = selected_sheet
+    
     mode = st.radio(
         "📖 Chọn hình thức học:", 
         ["1. Flashcard (Từng câu & Luyện lỗi sai)", "2. Thi thử (50 câu ngẫu nhiên)"]
     )
     
-    df = load_data(SHEET_URLS[selected_sheet])
+    df = load_data(SHEET_URLS[selected_sheet], selected_sheet)
+    is_initial_load = st.session_state.prev_sheet == ""
     
-    # Nếu người dùng đổi bài thi hoặc đổi chế độ -> Reset dữ liệu tự động
     if selected_sheet != st.session_state.prev_sheet or mode != st.session_state.prev_mode:
         if not df.empty:
-            reset_flashcard(df)
-            reset_mock_test(df)
+            if is_initial_load:
+                # Nếu là lần tải đầu (hoặc reload): Giữ nguyên vị trí câu hỏi lấy từ URL
+                st.session_state.fc_queue = list(range(len(df)))
+            else:
+                # Nếu người dùng chủ động bấm đổi bài: Xóa sạch tiến độ làm lại từ đầu
+                reset_flashcard(df)
+                reset_mock_test(df)
         st.session_state.prev_sheet = selected_sheet
         st.session_state.prev_mode = mode
         
@@ -135,22 +156,16 @@ st.title("✈️ Hệ Thống Ôn Tập Trắc Nghiệm")
 if df.empty:
     st.warning("Sheet này hiện chưa có câu hỏi nào hợp lệ. Bạn hãy kiểm tra lại file trang tính nhé!")
 else:
-    # ==========================================
-    # HÌNH THỨC 1: FLASHCARD (TỪNG CÂU + LÀM LẠI CÂU SAI)
-    # ==========================================
     if mode.startswith("1"):
-        st.caption(f"Đang học: **{selected_sheet}** | Chế độ: Flashcard")
-        
+        st.caption(f"Đang học: **{selected_sheet}** | Chế độ: Flashcard (Tự động lưu tiến độ)")
         queue_len = len(st.session_state.fc_queue)
         
         if queue_len == 0:
             st.info("Chưa có câu hỏi nào trong hàng chờ.")
         elif st.session_state.fc_current >= queue_len:
-            # ĐÃ HOÀN THÀNH HÀNG CHỜ CÂU HỎI
             st.success("🎉 Bạn đã hoàn thành chuỗi câu hỏi này!")
             st.write(f"### 🎯 Điểm số: {st.session_state.fc_score} / {queue_len}")
             
-            # Nếu có câu sai, hiển thị nút cho phép làm lại
             num_incorrect = len(st.session_state.fc_incorrect)
             if num_incorrect > 0:
                 st.warning(f"⚠️ Bạn có **{num_incorrect}** câu trả lời sai cần ôn lại.")
@@ -160,13 +175,10 @@ else:
             else:
                 st.balloons()
                 st.info("Tuyệt vời! Bạn không sai câu nào cả. 💯")
-                
         else:
-            # ĐANG TRONG QUÁ TRÌNH HỌC TỪNG CÂU
             real_idx = st.session_state.fc_queue[st.session_state.fc_current]
             row = df.iloc[real_idx]
             
-            # Thanh tiến trình
             progress_val = st.session_state.fc_current / queue_len
             st.progress(progress_val)
             
@@ -177,11 +189,9 @@ else:
             st.write(status_text)
             st.divider()
             
-            # Nội dung câu hỏi
             st.markdown(f"### {row.get('Nội dung câu hỏi (*)', 'Lỗi nội dung')}")
             options, correct_ans = get_options_and_correct(row, df.columns)
             
-            # Nơi chọn đáp án
             user_choice = st.radio(
                 "Lựa chọn của bạn:", 
                 options, 
@@ -201,12 +211,11 @@ else:
                         st.session_state.fc_answered = True
                         if user_choice == correct_ans:
                             st.session_state.fc_score += 1
+                            st.query_params["score"] = st.session_state.fc_score # Lưu điểm ngay lập tức
                         else:
-                            # Nếu sai, lưu index vào danh sách sai
                             st.session_state.fc_incorrect.append(real_idx)
                         st.rerun()
             else:
-                # Hiển thị đáp án
                 if st.session_state.fc_choice == correct_ans:
                     st.success(f"✅ **Chính xác!** {correct_ans}")
                 else:
@@ -217,15 +226,13 @@ else:
                     st.session_state.fc_current += 1
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
+                    update_url() # Lưu vị trí câu hỏi mới lên URL
                     st.rerun()
 
-    # ==========================================
-    # HÌNH THỨC 2: THI THỬ 50 CÂU
-    # ==========================================
     elif mode.startswith("2"):
         st.caption(f"Đang thi thử: **{selected_sheet}** | Đề thi gồm {len(st.session_state.mt_indices)} câu ngẫu nhiên")
+        st.info("💡 Lưu ý: Chế độ Thi thử sẽ không lưu tiến độ nếu bạn tải lại trang. Hãy cố gắng làm xong trong 1 lần nhé!")
         
-        # NẾU CHƯA NỘP BÀI -> Hiển thị form làm bài
         if not st.session_state.mt_submitted:
             with st.form("mock_test_form"):
                 current_answers = {}
@@ -247,17 +254,15 @@ else:
                     st.session_state.mt_submitted = True
                     st.rerun()
                     
-        # NẾU ĐÃ NỘP BÀI -> Chấm điểm và hiển thị kết quả tĩnh
         else:
             score = 0
-            results_ui = [] # Lưu các khối giao diện để render sau khi đếm xong điểm
+            results_ui = []
             
             for i, idx in enumerate(st.session_state.mt_indices):
                 row = df.iloc[idx]
                 options, correct_ans = get_options_and_correct(row, df.columns)
                 user_ans = st.session_state.mt_answers.get(idx)
                 
-                # Tạo khối hiển thị kết quả cho câu này
                 ui_block = f"**Câu {i + 1}: {row.get('Nội dung câu hỏi (*)', '')}**\n\n"
                 if user_ans == correct_ans:
                     score += 1
@@ -269,15 +274,12 @@ else:
                 
                 results_ui.append(ui_block)
 
-            # Hiện điểm tổng
             st.success(f"### 🏆 Điểm của bạn: {score} / {len(st.session_state.mt_indices)}")
             st.divider()
             
-            # Đổ kết quả chi tiết ra màn hình
             for block in results_ui:
                 st.markdown(block)
                 st.write("---")
                 
-            # Đạt điểm cao thì cho pháo hoa
             if score == len(st.session_state.mt_indices):
                 st.balloons()
