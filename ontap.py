@@ -6,8 +6,8 @@ import requests
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
-# Lấy đường link API bảo mật từ Streamlit Secrets
-API_URL = st.secrets.get("API_URL", "")
+# ĐÃ GẮN LINK GOOGLE APPS SCRIPT CỦA BẠN VÀO ĐÂY
+API_URL = "https://script.google.com/macros/s/AKfycbyZANZPy6zjVpaLcvUsn-fYPntNlHLsTVVZUD7nd5mAKkRp9kfV4DantgZ0PpKjRHCp/exec"
 
 # --- 2. KHAI BÁO LINK DỮ LIỆU CÂU HỎI TSV ---
 SHEET_URLS = {
@@ -22,6 +22,7 @@ def init_states():
     if 'prev_sheet' not in st.session_state: st.session_state.prev_sheet = ""
     if 'prev_mode' not in st.session_state: st.session_state.prev_mode = ""
     if 'db_loaded' not in st.session_state: st.session_state.db_loaded = False
+    if 'sync_error' not in st.session_state: st.session_state.sync_error = False
     
     if 'fc_queue' not in st.session_state: st.session_state.fc_queue = []
     if 'fc_current' not in st.session_state: st.session_state.fc_current = 0
@@ -39,17 +40,20 @@ init_states()
 
 # --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD ---
 def fetch_progress_from_db(user, quiz):
-    if not API_URL: return None
+    if not API_URL or "DÁN_LINK" in API_URL: 
+        st.session_state.sync_error = True
+        return None
     try:
         response = requests.get(f"{API_URL}?user={user}&quiz={quiz}", timeout=5)
         if response.status_code == 200:
+            st.session_state.sync_error = False
             return response.json()
     except:
-        pass
+        st.session_state.sync_error = True
     return None
 
 def save_progress_to_db():
-    if not API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: 
+    if not API_URL or "DÁN_LINK" in API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: 
         return
     try:
         err_str = ",".join(map(str, st.session_state.fc_incorrect))
@@ -62,7 +66,7 @@ def save_progress_to_db():
         }
         requests.post(API_URL, json=payload, timeout=5)
     except:
-        pass
+        st.session_state.sync_error = True
 
 def reset_flashcard(df):
     st.session_state.fc_queue = list(range(len(df)))
@@ -136,17 +140,17 @@ def get_options_and_correct(row, df_columns):
 # --- 5. MÀN HÌNH KHAI BÁO TÊN BAN ĐẦU ---
 if st.session_state.user_name == "":
     st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
-    st.subheader("Hệ thống tự động đồng bộ đám mây đám mây")
+    st.subheader("Hệ thống tự động đồng bộ đám mây")
     
     with st.form("identity_form"):
-        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ (Ví dụ: TrungCB):")
-        submit_identity = st.form_submit_button("Vào ôn luyện dữ liệu 🚀")
+        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ:")
+        submit_identity = st.form_submit_button("Vào ôn luyện 🚀")
         if submit_identity:
             if name_input.strip() == "":
                 st.warning("Vui lòng điền tên định danh cá nhân!")
             else:
                 st.session_state.user_name = name_input.strip()
-                st.session_state.db_loaded = False  # Ép tải lại DB theo tên mới
+                st.session_state.db_loaded = False 
                 st.rerun()
     st.stop()
 
@@ -168,11 +172,10 @@ with st.sidebar:
     
     df = load_data(SHEET_URLS[selected_sheet], selected_sheet)
     
-    # Reset hoặc kích hoạt cơ chế tải DB khi đổi bài thi/chế độ
     if selected_sheet != st.session_state.prev_sheet or mode != st.session_state.prev_mode:
         st.session_state.prev_sheet = selected_sheet
         st.session_state.prev_mode = mode
-        st.session_state.db_loaded = False  # Kích hoạt tải từ Google Sheets về cho học phần mới
+        st.session_state.db_loaded = False 
         if not df.empty:
             reset_mock_test(df)
 
@@ -188,7 +191,6 @@ with st.sidebar:
                 inc_str = progress.get("incorrect", "")
                 st.session_state.fc_incorrect = [int(x) for x in inc_str.split(",") if x]
             else:
-                # Nếu chưa có lịch sử, khởi tạo mặc định từ câu 1
                 st.session_state.fc_current = 0
                 st.session_state.fc_score = 0
                 st.session_state.fc_incorrect = []
@@ -204,6 +206,10 @@ with st.sidebar:
 
 # --- 7. KHU VỰC HIỂN THỊ CHÍNH ---
 st.title("✈️ Hệ Thống Ôn Tập Trắc Nghiệm")
+
+# HIỂN THỊ CẢNH BÁO NẾU CHƯA DÁN LINK HOẶC LỖI ĐỒNG BỘ
+if st.session_state.sync_error:
+    st.error("⚠️ Lỗi kết nối Đồng bộ: Google đang chặn ứng dụng. Vui lòng vào lại Google Sheets, triển khai phiên bản mới và đảm bảo quyền truy cập là 'Bất kỳ ai' (Anyone).")
 
 if df.empty:
     st.warning("Sheet này hiện chưa có câu hỏi nào hợp lệ. Bạn hãy kiểm tra lại file trang tính nhé!")
@@ -238,7 +244,6 @@ else:
                     retry_wrong_flashcards()
                     st.rerun()
         else:
-            # NHẢY CÂU NHANH
             if not st.session_state.fc_is_retry:
                 with st.expander("⏩ Chuyển nhanh đến câu khác", expanded=False):
                     col1, col2 = st.columns([3, 1])
@@ -251,7 +256,7 @@ else:
                             st.session_state.fc_current = jump_to - 1
                             st.session_state.fc_answered = False
                             st.session_state.fc_choice = None
-                            save_progress_to_db() # Đẩy tiến độ nhảy vị trí lên Cloud
+                            save_progress_to_db()
                             st.rerun()
                             
             real_idx = st.session_state.fc_queue[st.session_state.fc_current]
@@ -286,7 +291,7 @@ else:
                         else:
                             if real_idx not in st.session_state.fc_incorrect:
                                 st.session_state.fc_incorrect.append(real_idx)
-                        save_progress_to_db() # Đồng bộ câu vừa trả lời lên Cloud
+                        save_progress_to_db()
                         st.rerun()
             else:
                 if st.session_state.fc_choice == correct_ans:
@@ -299,7 +304,7 @@ else:
                     st.session_state.fc_current += 1
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
-                    save_progress_to_db() # Cập nhật tăng vị trí câu lên Cloud
+                    save_progress_to_db()
                     st.rerun()
 
     # ==========================================
