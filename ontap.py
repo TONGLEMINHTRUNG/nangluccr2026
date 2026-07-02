@@ -7,6 +7,30 @@ import json
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
+# CSS để thu nhỏ giãn cách và tăng cỡ chữ
+st.markdown("""
+    <style>
+    /* Tăng cỡ chữ của radio button (đáp án) */
+    div[role="radiogroup"] label p {
+        font-size: 18px !important;
+        font-weight: 500;
+    }
+    /* Thu hẹp khoảng cách giữa các câu và các thành phần */
+    .stMarkdown, .stRadio {
+        margin-bottom: -10px !important;
+    }
+    /* Giảm khoảng cách giữa câu hỏi và đáp án */
+    div[data-testid="stMarkdownContainer"] {
+        margin-bottom: 5px !important;
+    }
+    /* Thu gọn khoảng cách giữa các khối câu hỏi */
+    hr {
+        margin-top: 10px !important;
+        margin-bottom: 10px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Lấy đường link API bảo mật từ Streamlit Secrets
 API_URL = st.secrets.get("API_URL", "")
 
