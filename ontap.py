@@ -6,14 +6,14 @@ import requests
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
-# ĐÃ GẮN LINK GOOGLE APPS SCRIPT CỦA BẠN VÀO ĐÂY
+# LINK GOOGLE APPS SCRIPT ĐÃ ĐƯỢC GẮN CHUẨN XÁC
 API_URL = "https://script.google.com/macros/s/AKfycbyZANZPy6zjVpaLcvUsn-fYPntNlHLsTVVZUD7nd5mAKkRp9kfV4DantgZ0PpKjRHCp/exec"
 
 # --- 2. KHAI BÁO LINK DỮ LIỆU CÂU HỎI TSV ---
 SHEET_URLS = {
-    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
+    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
     "Bài thi LTC-APP": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=272921330&single=true&output=tsv",
-    "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
+    "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=0&single=true&output=tsv"
 }
 
 # --- 3. QUẢN LÝ TRẠNG THÁI (SESSION STATE) ---
@@ -57,10 +57,14 @@ def save_progress_to_db():
         return
     try:
         err_str = ",".join(map(str, st.session_state.fc_incorrect))
+        
+        # LOGIC MỚI: Nếu câu hỏi đã được bấm "Kiểm tra kết quả", ngầm lưu vị trí là câu tiếp theo (+1)
+        saved_current_q = st.session_state.fc_current + 1 if st.session_state.fc_answered else st.session_state.fc_current
+        
         payload = {
             "user": st.session_state.user_name,
             "quiz": st.session_state.prev_sheet,
-            "currentQ": st.session_state.fc_current,
+            "currentQ": saved_current_q,
             "score": st.session_state.fc_score,
             "incorrect": err_str
         }
@@ -207,9 +211,9 @@ with st.sidebar:
 # --- 7. KHU VỰC HIỂN THỊ CHÍNH ---
 st.title("✈️ Hệ Thống Ôn Tập Trắc Nghiệm")
 
-# HIỂN THỊ CẢNH BÁO NẾU CHƯA DÁN LINK HOẶC LỖI ĐỒNG BỘ
+# HIỂN THỊ CẢNH BÁO NẾU LỖI ĐỒNG BỘ
 if st.session_state.sync_error:
-    st.error("⚠️ Lỗi kết nối Đồng bộ: Google đang chặn ứng dụng. Vui lòng vào lại Google Sheets, triển khai phiên bản mới và đảm bảo quyền truy cập là 'Bất kỳ ai' (Anyone).")
+    st.error("⚠️ Lỗi kết nối Đồng bộ: Không thể lưu tiến độ lúc này.")
 
 if df.empty:
     st.warning("Sheet này hiện chưa có câu hỏi nào hợp lệ. Bạn hãy kiểm tra lại file trang tính nhé!")
