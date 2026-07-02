@@ -1,12 +1,15 @@
 import streamlit as st
 import pandas as pd
 import random
-import base64
+import requests
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
-# --- 2. KHAI BÁO LINK DỮ LIỆU TSV ---
+# Lấy đường link API bảo mật từ Streamlit Secrets
+API_URL = st.secrets.get("API_URL", "")
+
+# --- 2. KHAI BÁO LINK DỮ LIỆU CÂU HỎI TSV ---
 SHEET_URLS = {
     "Bài thi LTCS-CR": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
     "Bài thi LTC-APP": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=272921330&single=true&output=tsv",
@@ -18,6 +21,7 @@ def init_states():
     if 'user_name' not in st.session_state: st.session_state.user_name = ""
     if 'prev_sheet' not in st.session_state: st.session_state.prev_sheet = ""
     if 'prev_mode' not in st.session_state: st.session_state.prev_mode = ""
+    if 'db_loaded' not in st.session_state: st.session_state.db_loaded = False
     
     if 'fc_queue' not in st.session_state: st.session_state.fc_queue = []
     if 'fc_current' not in st.session_state: st.session_state.fc_current = 0
@@ -33,6 +37,33 @@ def init_states():
 
 init_states()
 
+# --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD ---
+def fetch_progress_from_db(user, quiz):
+    if not API_URL: return None
+    try:
+        response = requests.get(f"{API_URL}?user={user}&quiz={quiz}", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except:
+        pass
+    return None
+
+def save_progress_to_db():
+    if not API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: 
+        return
+    try:
+        err_str = ",".join(map(str, st.session_state.fc_incorrect))
+        payload = {
+            "user": st.session_state.user_name,
+            "quiz": st.session_state.prev_sheet,
+            "currentQ": st.session_state.fc_current,
+            "score": st.session_state.fc_score,
+            "incorrect": err_str
+        }
+        requests.post(API_URL, json=payload, timeout=5)
+    except:
+        pass
+
 def reset_flashcard(df):
     st.session_state.fc_queue = list(range(len(df)))
     st.session_state.fc_current = 0
@@ -41,6 +72,7 @@ def reset_flashcard(df):
     st.session_state.fc_choice = None
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = False
+    save_progress_to_db()
 
 def retry_wrong_flashcards():
     st.session_state.fc_queue = st.session_state.fc_incorrect.copy()
@@ -57,65 +89,7 @@ def reset_mock_test(df):
     st.session_state.mt_submitted = False
     st.session_state.mt_answers = {}
 
-# --- HÀM TẠO & ĐỌC MÃ KHÔI PHỤC (CÓ LƯU TÊN) ---
-def generate_save_code():
-    err_str = ",".join(map(str, st.session_state.fc_incorrect))
-    # Cấu trúc mã hóa mới: Tên|Câu_Hiện_Tại|Điểm|Các_Câu_Sai
-    raw_str = f"{st.session_state.user_name}|{st.session_state.fc_current}|{st.session_state.fc_score}|{err_str}"
-    encoded = base64.b64encode(raw_str.encode()).decode()
-    return encoded
-
-def restore_from_code(code_str):
-    try:
-        decoded = base64.b64decode(code_str.encode()).decode()
-        parts = decoded.split('|')
-        st.session_state.user_name = parts[0]
-        st.session_state.fc_current = int(parts[1])
-        st.session_state.fc_score = int(parts[2])
-        if len(parts) > 3 and parts[3]:
-            st.session_state.fc_incorrect = [int(x) for x in parts[3].split(',')]
-        else:
-            st.session_state.fc_incorrect = []
-        return True
-    except:
-        return False
-
-# --- 4. MÀN HÌNH KHAI BÁO TÊN ĐẦU VÀO ---
-if st.session_state.user_name == "":
-    st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
-    st.caption("Vui lòng xác nhận thông tin học viên để bắt đầu ghi nhớ tiến độ")
-    
-    tab1, tab2 = st.tabs(["🆕 Đăng ký lượt học mới", "🔄 Khôi phục tiến độ bằng mã"])
-    
-    with tab1:
-        with st.form("name_form"):
-            name_input = st.text_input("Nhập Họ và Tên của bạn:", placeholder="Ví dụ: Tống Lê Minh Trung")
-            submit_name = st.form_submit_button("Bắt đầu vào học 🚀")
-            if submit_name:
-                if name_input.strip() == "":
-                    st.warning("Vui lòng nhập tên để hệ thống cá nhân hóa bài thi!")
-                else:
-                    st.session_state.user_name = name_input.strip()
-                    st.rerun()
-                    
-    with tab2:
-        with st.form("restore_form"):
-            code_input = st.text_input("Dán đoạn mã khôi phục của bạn vào đây:")
-            submit_code = st.form_submit_button("Xác nhận khôi phục 🔄")
-            if submit_code:
-                if code_input.strip() == "":
-                    st.warning("Vui lòng nhập mã tiến độ đã lưu trước đó!")
-                else:
-                    if restore_from_code(code_input):
-                        st.success(f"Xin chào trở lại, {st.session_state.user_name}! Tiến độ của bạn đã sẵn sàng.")
-                        st.session_state.fc_answered = False
-                        st.session_state.fc_choice = None
-                        st.rerun()
-                    else:
-                        st.error("Mã khôi phục không hợp lệ hoặc đã bị chỉnh sửa!")
-    st.stop() # Dừng toàn bộ các lệnh bên dưới nếu chưa qua được bước nhập tên
-
-# --- 5. TẢI DỮ LIỆU TỪ SHEET ---
+# --- 4. TẢI DỮ LIỆU ĐỀ THI ---
 @st.cache_data(ttl=600) 
 def load_data(url, sheet_name):
     df_raw = pd.read_csv(url, sep='\t', header=None, dtype=str)
@@ -159,40 +133,71 @@ def get_options_and_correct(row, df_columns):
     return options_to_display, correct_full_text
 
 
-# --- 6. GIAO DIỆN MENU BÊN TRÁI (SIDEBAR) ---
+# --- 5. MÀN HÌNH KHAI BÁO TÊN BAN ĐẦU ---
+if st.session_state.user_name == "":
+    st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
+    st.subheader("Hệ thống tự động đồng bộ đám mây đám mây")
+    
+    with st.form("identity_form"):
+        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ (Ví dụ: TrungCB):")
+        submit_identity = st.form_submit_button("Vào ôn luyện dữ liệu 🚀")
+        if submit_identity:
+            if name_input.strip() == "":
+                st.warning("Vui lòng điền tên định danh cá nhân!")
+            else:
+                st.session_state.user_name = name_input.strip()
+                st.session_state.db_loaded = False  # Ép tải lại DB theo tên mới
+                st.rerun()
+    st.stop()
+
+# --- 6. GIAO DIỆN MENU CÀI ĐẶT BÊN CẠNH ---
 with st.sidebar:
-    st.subheader(f"👤 Học viên: {st.session_state.user_name}")
-    if st.button("🚪 Đổi người học / Đăng xuất"):
+    st.success(f"👤 Học viên: **{st.session_state.user_name}**")
+    if st.button("🚪 Đổi tài khoản / Đăng xuất"):
         st.session_state.user_name = ""
+        st.session_state.db_loaded = False
         st.rerun()
         
     st.divider()
-    st.title("⚙️ Cài đặt đề thi")
+    st.title("⚙️ Cài đặt")
     selected_sheet = st.selectbox("📌 Chọn bài thi:", list(SHEET_URLS.keys()))
     mode = st.radio(
         "📖 Chọn hình thức học:", 
-        ["1. Flashcard (Học & Lưu tiến độ)", "2. Thi thử (50 câu ngẫu nhiên)"]
+        ["1. Flashcard (Học tự động lưu)", "2. Thi thử (50 câu ngẫu nhiên)"]
     )
     
     df = load_data(SHEET_URLS[selected_sheet], selected_sheet)
     
+    # Reset hoặc kích hoạt cơ chế tải DB khi đổi bài thi/chế độ
     if selected_sheet != st.session_state.prev_sheet or mode != st.session_state.prev_mode:
-        if not df.empty:
-            reset_flashcard(df)
-            reset_mock_test(df)
         st.session_state.prev_sheet = selected_sheet
         st.session_state.prev_mode = mode
-        
+        st.session_state.db_loaded = False  # Kích hoạt tải từ Google Sheets về cho học phần mới
+        if not df.empty:
+            reset_mock_test(df)
+
+    # --- TIẾN HÀNH ĐỒNG BỘ DỮ LIỆU TỪ CLOUD CHO FLASHCARD ---
+    if mode.startswith("1") and not df.empty and not st.session_state.db_loaded:
+        with st.spinner("🔄 Đang đồng bộ tiến độ từ Google Sheets..."):
+            st.session_state.fc_queue = list(range(len(df)))
+            progress = fetch_progress_from_db(st.session_state.user_name, selected_sheet)
+            
+            if progress and progress.get("status") == "found":
+                st.session_state.fc_current = min(int(progress.get("currentQ", 0)), len(df) - 1)
+                st.session_state.fc_score = int(progress.get("score", 0))
+                inc_str = progress.get("incorrect", "")
+                st.session_state.fc_incorrect = [int(x) for x in inc_str.split(",") if x]
+            else:
+                # Nếu chưa có lịch sử, khởi tạo mặc định từ câu 1
+                st.session_state.fc_current = 0
+                st.session_state.fc_score = 0
+                st.session_state.fc_incorrect = []
+                
+            st.session_state.db_loaded = True
+            st.rerun()
+            
     st.divider()
-    
-    if mode.startswith("1") and not df.empty:
-        st.subheader("💾 Lưu lại tiến độ")
-        save_code = generate_save_code()
-        st.info("Hãy copy đoạn mã này lưu lại để lần sau khôi phục đúng vị trí và danh sách câu sai của bạn:")
-        st.code(save_code, language=None)
-        st.divider()
-        
-    if st.button("🗑️ Làm lại bài từ đầu"):
+    if st.button("🗑️ Xóa toàn bộ tiến độ - Làm lại đầu"):
         reset_flashcard(df)
         reset_mock_test(df)
         st.rerun()
@@ -204,36 +209,36 @@ if df.empty:
     st.warning("Sheet này hiện chưa có câu hỏi nào hợp lệ. Bạn hãy kiểm tra lại file trang tính nhé!")
 else:
     # ==========================================
-    # HÌNH THỨC 1: FLASHCARD
+    # HÌNH THỨC 1: FLASHCARD (CLOUD AUTOMATED)
     # ==========================================
     if mode.startswith("1"):
-        st.caption(f"Học viên: **{st.session_state.user_name}** | Bài thi: **{selected_sheet}**")
+        st.caption(f"Học viên: **{st.session_state.user_name}** | Tiến độ của bạn được lưu tự động lên Google Sheets")
         queue_len = len(st.session_state.fc_queue)
         
         num_incorrect = len(st.session_state.fc_incorrect)
         if num_incorrect > 0:
-            with st.expander(f"👀 Xem danh sách {num_incorrect} câu đã làm sai", expanded=False):
+            with st.expander(f"👀 Xem danh sách {num_incorrect} câu bạn đã làm sai", expanded=False):
                 for err_idx in st.session_state.fc_incorrect:
-                    err_row = df.iloc[err_idx]
-                    _, corr_ans = get_options_and_correct(err_row, df.columns)
-                    st.markdown(f"**Câu {err_idx + 1}:** {err_row.get('Nội dung câu hỏi (*)', '')}")
-                    st.markdown(f"✅ *Đáp án đúng:* {corr_ans}")
-                    st.write("---")
+                    if err_idx < len(df):
+                        err_row = df.iloc[err_idx]
+                        _, corr_ans = get_options_and_correct(err_row, df.columns)
+                        st.markdown(f"**Câu {err_idx + 1}:** {err_row.get('Nội dung câu hỏi (*)', '')}")
+                        st.markdown(f"✅ *Đáp án đúng:* {corr_ans}")
+                        st.write("---")
         
         if queue_len == 0:
-            st.info("Chưa có câu hỏi nào.")
+            st.info("Chưa có dữ liệu câu hỏi.")
         elif st.session_state.fc_current >= queue_len:
             st.success("🎉 Bạn đã hoàn thành chuỗi câu hỏi này!")
             st.write(f"### 🎯 Kết quả tổng kết: {st.session_state.fc_score} / {queue_len}")
             
             if num_incorrect > 0:
-                st.warning(f"⚠️ Bạn còn {num_incorrect} câu sai chưa giải quyết xong.")
-                if st.button("🔄 Luyện lại các câu làm sai"):
+                st.warning(f"⚠️ Bạn còn {num_incorrect} câu làm sai cần giải quyết.")
+                if st.button("🔄 Luyện tập lại các câu làm sai"):
                     retry_wrong_flashcards()
                     st.rerun()
-            else:
-                st.balloons()
         else:
+            # NHẢY CÂU NHANH
             if not st.session_state.fc_is_retry:
                 with st.expander("⏩ Chuyển nhanh đến câu khác", expanded=False):
                     col1, col2 = st.columns([3, 1])
@@ -246,18 +251,14 @@ else:
                             st.session_state.fc_current = jump_to - 1
                             st.session_state.fc_answered = False
                             st.session_state.fc_choice = None
+                            save_progress_to_db() # Đẩy tiến độ nhảy vị trí lên Cloud
                             st.rerun()
                             
             real_idx = st.session_state.fc_queue[st.session_state.fc_current]
             row = df.iloc[real_idx]
             
             st.progress(st.session_state.fc_current / queue_len)
-            
-            status_text = f"📝 **Câu {st.session_state.fc_current + 1}/{queue_len}** "
-            if st.session_state.fc_is_retry:
-                status_text += " *(Chế độ luyện câu sai)*"
-            status_text += f" | 🎯 Đã đúng: **{st.session_state.fc_score}**"
-            st.write(status_text)
+            st.write(f"📝 **Câu {st.session_state.fc_current + 1}/{queue_len}** | 🎯 Đã đúng: **{st.session_state.fc_score}**")
             st.divider()
             
             st.markdown(f"### {row.get('Nội dung câu hỏi (*)', 'Lỗi nội dung')}")
@@ -285,6 +286,7 @@ else:
                         else:
                             if real_idx not in st.session_state.fc_incorrect:
                                 st.session_state.fc_incorrect.append(real_idx)
+                        save_progress_to_db() # Đồng bộ câu vừa trả lời lên Cloud
                         st.rerun()
             else:
                 if st.session_state.fc_choice == correct_ans:
@@ -297,6 +299,7 @@ else:
                     st.session_state.fc_current += 1
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
+                    save_progress_to_db() # Cập nhật tăng vị trí câu lên Cloud
                     st.rerun()
 
     # ==========================================
