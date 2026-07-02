@@ -212,12 +212,12 @@ def get_options_and_correct(row, df_columns):
 
 # --- 5. MÀN HÌNH KHAI BÁO TÊN BAN ĐẦU ---
 if st.session_state.user_name == "":
-    st.title("✈️ Hệ Thống Ôn Tập Năng Lực Trắc Nghiệm")
+    st.title("✈️ Phần mềm ôn thi Cam Ranh")
     st.subheader("Hệ thống tự động đồng bộ đám mây")
     
     with st.form("identity_form"):
-        name_input = st.text_input("Nhập Tên hoặc Ký hiệu viết tắt của bạn để lưu tiến độ:")
-        submit_identity = st.form_submit_button("Vào ôn luyện 🚀")
+        name_input = st.text_input("Nhập Tên hoặc Initial Name của bạn để lưu tiến độ:")
+        submit_identity = st.form_submit_button("Login 🚀")
         if submit_identity:
             if name_input.strip() == "":
                 st.warning("Vui lòng điền tên định danh cá nhân!")
@@ -242,7 +242,7 @@ with st.sidebar:
     selected_sheet = st.selectbox("📌 Chọn bài thi:", list(SHEET_URLS.keys()))
     mode = st.radio(
         "📖 Chọn hình thức học:", 
-        ["1. Flashcard (Học tự động lưu)", "2. Thi thử (50 câu ngẫu nhiên)", "3. 🏆 Xem Lịch Sử Thi"]
+        ["1. Flashcard ", "2. Thi thử (50 câu ngẫu nhiên)", "3. 🏆 Xem Lịch Sử Thi"]
     )
     
     df = load_data(SHEET_URLS[selected_sheet], selected_sheet)
