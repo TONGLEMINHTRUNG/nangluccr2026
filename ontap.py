@@ -74,7 +74,7 @@ def init_states():
     if 'fc_score' not in st.session_state: st.session_state.fc_score = 0
     if 'fc_incorrect' not in st.session_state: st.session_state.fc_incorrect = []
     if 'fc_is_retry' not in st.session_state: st.session_state.fc_is_retry = False
-    if 'fc_history_choices' not in st.session_state: st.session_state.fc_history_choices = {} # Bộ nhớ lưu lịch sử đáp án đã chọn
+    if 'fc_history_choices' not in st.session_state: st.session_state.fc_history_choices = {}
 
     # Mock Test State
     if 'mt_indices' not in st.session_state: st.session_state.mt_indices = []
@@ -83,7 +83,7 @@ def init_states():
 
 init_states()
 
-# --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD (BẤT ĐỒNG BỘ - SIÊU TỐC) ---
+# --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD ---
 def fetch_progress_from_db(user, quiz):
     if not API_URL: return None
     try:
@@ -140,6 +140,10 @@ def on_mt_answer_change(idx_str):
     st.session_state.mt_answers[idx_str] = selected_val
     save_mt_progress()
 
+def navigate_fc(new_idx):
+    st.session_state.fc_current = new_idx
+    save_fc_progress()
+
 def reset_flashcard(df):
     st.session_state.fc_queue = list(range(len(df)))
     st.session_state.fc_current = 0
@@ -155,7 +159,7 @@ def retry_wrong_flashcards():
     st.session_state.fc_score = 0
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = True
-    st.session_state.fc_history_choices = {} # Làm mới lịch sử cho vòng lặp ôn lại
+    st.session_state.fc_history_choices = {} 
 
 def reset_mock_test(df):
     k = min(50, len(df))
@@ -356,8 +360,7 @@ else:
                         st.write("") 
                         st.write("")
                         if st.button("Đi tiếp 🚀"):
-                            st.session_state.fc_current = jump_to - 1
-                            save_fc_progress()
+                            navigate_fc(jump_to - 1)
                             st.rerun()
                             
             real_idx = st.session_state.fc_queue[st.session_state.fc_current]
@@ -381,7 +384,6 @@ else:
             st.markdown(f"### {row.get('Nội dung câu hỏi (*)', 'Lỗi nội dung')}")
             options, correct_ans = get_options_and_correct(row, df.columns)
             
-            # KIỂM TRA LỊCH SỬ ĐÁP ÁN ĐỂ CHỐT CHẶN (NÚT BACK ĐƯỢC GIẢI QUYẾT TẠI ĐÂY)
             is_answered = real_idx in st.session_state.fc_history_choices
             current_index = None
 
@@ -395,17 +397,16 @@ else:
                 options, 
                 key=f"fc_radio_{real_idx}",
                 index=current_index,
-                disabled=is_answered # Khóa cứng nếu đã trả lời
+                disabled=is_answered
             )
             
             st.write("---")
             
-            # --- KHU VỰC NÚT ĐIỀU HƯỚNG ---
             col_b1, col_b2, col_b3 = st.columns([1, 1, 4])
             
             if st.session_state.fc_current > 0:
                 if col_b1.button("⬅️ Back"):
-                    st.session_state.fc_current -= 1
+                    navigate_fc(st.session_state.fc_current - 1)
                     st.rerun()
             
             if not is_answered:
@@ -413,7 +414,6 @@ else:
                     if user_choice is None:
                         st.warning("Vui lòng chọn một đáp án!")
                     else:
-                        # CHẤM ĐIỂM VÀ LƯU LỊCH SỬ DUY NHẤT 1 LẦN DÙ BACK TỚI LUI
                         st.session_state.fc_history_choices[real_idx] = user_choice
                         
                         if user_choice == correct_ans:
@@ -426,11 +426,9 @@ else:
                         st.rerun()
             else:
                 if col_b2.button("Next ➡️"):
-                    st.session_state.fc_current += 1
-                    save_fc_progress()
+                    navigate_fc(st.session_state.fc_current + 1)
                     st.rerun()
                     
-            # HIỂN THỊ KẾT QUẢ ĐÚNG/SAI NGAY LẬP TỨC CHO DÙ LÀ CÂU MỚI KIỂM TRA HAY CÂU CŨ BACK LẠI
             if is_answered:
                 active_choice = st.session_state.fc_history_choices[real_idx]
                 if active_choice == correct_ans:
@@ -440,7 +438,7 @@ else:
                     st.info(f"💡 **Đáp án đúng là:** {correct_ans}")
 
     # ==========================================
-    # HÌNH THỨC 2: THI THỬ 50 CÂU (LƯU VỊ TRÍ)
+    # HÌNH THỨC 2: THI THỬ 50 CÂU (GIỮ NGUYÊN)
     # ==========================================
     elif mode.startswith("2"):
         st.caption(f"Học viên: **{st.session_state.user_name}** | Chế độ: Thi thử (Hệ thống tự lưu đáp án khi bạn chọn)")
@@ -492,7 +490,7 @@ else:
                 elif user_ans is None:
                     ui_block += f"⚠️ **Chưa trả lời** (Đáp án đúng: {correct_ans})"
                 else:
-                    ui_block += f"❌ **Sai.** Bạn chọn: {user_ans}  \n💡 **Đáp án đúng:** {correct_ans}")
+                    ui_block += f"❌ **Sai.** Bạn chọn: {user_ans}  \n💡 **Đáp án đúng:** {correct_ans}"
                 
                 results_ui.append(ui_block)
 
