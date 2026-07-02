@@ -3,11 +3,11 @@ import pandas as pd
 import random
 import requests
 import json
+from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. CẤU HÌNH GIAO DIỆN ---
+# --- 1. CẤU HÌNH GIAO DIỆN VÀ CSS THU GỌN ---
 st.set_page_config(page_title="Hệ Thống Ôn Tập Năng Lực", page_icon="✈️", layout="wide")
 
-# CSS để thu nhỏ giãn cách và tăng cỡ chữ
 st.markdown("""
     <style>
     /* Tăng cỡ chữ của radio button (đáp án) */
@@ -34,6 +34,10 @@ st.markdown("""
 # Lấy đường link API bảo mật từ Streamlit Secrets
 API_URL = st.secrets.get("API_URL", "")
 
+# Khởi tạo ThreadPoolExecutor để đẩy dữ liệu chạy ngầm dưới nền, không block UI
+if 'executor' not in st.session_state:
+    st.session_state.executor = ThreadPoolExecutor(max_workers=2)
+
 # --- 2. KHAI BÁO LINK DỮ LIỆU ---
 SHEET_URLS = {
     "Bài thi LTC-ADC": "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6N9VuIhj0OxwG6DaGbAb380C6XkRGVDyZ72pwd6FVRrzKB7Mw9m5ypdCB3TGCBgQPSz6Xpfkyiq5p/pub?gid=1545601122&single=true&output=tsv",
@@ -56,6 +60,8 @@ def init_states():
     if 'fc_choice' not in st.session_state: st.session_state.fc_choice = None
     if 'fc_incorrect' not in st.session_state: st.session_state.fc_incorrect = []
     if 'fc_is_retry' not in st.session_state: st.session_state.fc_is_retry = False
+    # Bộ nhớ lưu lại các đáp án người dùng đã bấm ở chế độ Flashcard để phục vụ tính năng Back
+    if 'fc_history_choices' not in st.session_state: st.session_state.fc_history_choices = {}
 
     # Mock Test State
     if 'mt_indices' not in st.session_state: st.session_state.mt_indices = []
@@ -64,7 +70,7 @@ def init_states():
 
 init_states()
 
-# --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD ---
+# --- CÁC HÀM TỰ ĐỘNG ĐỒNG BỘ CLOUD (ĐÃ TĂNG TỐC BẤT ĐỒNG BỘ) ---
 def fetch_progress_from_db(user, quiz):
     if not API_URL: return None
     try:
@@ -81,41 +87,41 @@ def fetch_history_from_db(user):
     except: pass
     return []
 
+def _async_post_request(url, payload):
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except: pass
+
 def save_fc_progress():
     if not API_URL or st.session_state.user_name == "" or st.session_state.fc_is_retry: return
-    try:
-        err_str = ",".join(map(str, st.session_state.fc_incorrect))
-        payload = {
-            "action": "save_progress", "mode": "flashcard",
-            "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
-            "currentQ": st.session_state.fc_current, "score": st.session_state.fc_score, "incorrect": err_str
-        }
-        requests.post(API_URL, json=payload, timeout=5)
-    except: pass
+    err_str = ",".join(map(str, st.session_state.fc_incorrect))
+    payload = {
+        "action": "save_progress", "mode": "flashcard",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "currentQ": st.session_state.fc_current, "score": st.session_state.fc_score, "incorrect": err_str
+    }
+    # Đẩy tác vụ gửi request sang luồng ngầm xử lý độc lập
+    st.session_state.executor.submit(_async_post_request, API_URL, payload)
 
 def save_mt_progress():
     if not API_URL or st.session_state.user_name == "" or st.session_state.mt_submitted: return
-    try:
-        payload = {
-            "action": "save_progress", "mode": "mocktest",
-            "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
-            "mt_indices": json.dumps(st.session_state.mt_indices),
-            "mt_answers": json.dumps(st.session_state.mt_answers),
-            "mt_submitted": st.session_state.mt_submitted
-        }
-        requests.post(API_URL, json=payload, timeout=5)
-    except: pass
+    payload = {
+        "action": "save_progress", "mode": "mocktest",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "mt_indices": json.dumps(st.session_state.mt_indices),
+        "mt_answers": json.dumps(st.session_state.mt_answers),
+        "mt_submitted": st.session_state.mt_submitted
+    }
+    st.session_state.executor.submit(_async_post_request, API_URL, payload)
 
 def save_mt_history(score, total):
     if not API_URL or st.session_state.user_name == "": return
-    try:
-        payload = {
-            "action": "save_history",
-            "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
-            "score": score, "total": total
-        }
-        requests.post(API_URL, json=payload, timeout=5)
-    except: pass
+    payload = {
+        "action": "save_history",
+        "user": st.session_state.user_name, "quiz": st.session_state.prev_sheet,
+        "score": score, "total": total
+    }
+    st.session_state.executor.submit(_async_post_request, API_URL, payload)
 
 def on_mt_answer_change(idx_str):
     selected_val = st.session_state[f"mt_radio_{idx_str}"]
@@ -130,6 +136,7 @@ def reset_flashcard(df):
     st.session_state.fc_choice = None
     st.session_state.fc_incorrect = []
     st.session_state.fc_is_retry = False
+    st.session_state.fc_history_choices = {}
     save_fc_progress()
 
 def retry_wrong_flashcards():
@@ -303,7 +310,7 @@ elif df.empty:
     st.warning("Sheet này hiện chưa có câu hỏi nào hợp lệ. Bạn hãy kiểm tra lại file trang tính nhé!")
 else:
     # ==========================================
-    # HÌNH THỨC 1: FLASHCARD (GIỮ NGUYÊN)
+    # HÌNH THỨC 1: FLASHCARD
     # ==========================================
     if mode.startswith("1"):
         st.caption(f"Học viên: **{st.session_state.user_name}** | Tiến độ của bạn được lưu tự động")
@@ -357,43 +364,73 @@ else:
             st.markdown(f"### {row.get('Nội dung câu hỏi (*)', 'Lỗi nội dung')}")
             options, correct_ans = get_options_and_correct(row, df.columns)
             
+            # Kiểm tra xem câu hiện tại đã từng được trả lời hay chưa (Dùng cho tính năng Back câu hỏi cũ)
+            has_history = real_idx in st.session_state.fc_history_choices
+            current_index = None
+            
+            if st.session_state.fc_answered:
+                current_index = options.index(st.session_state.fc_choice) if st.session_state.fc_choice in options else None
+            elif has_history:
+                saved_choice = st.session_state.fc_history_choices[real_idx]
+                current_index = options.index(saved_choice) if saved_choice in options else None
+
             user_choice = st.radio(
                 "Lựa chọn của bạn:", 
                 options, 
                 key=f"fc_radio_{real_idx}",
-                index=None,
-                disabled=st.session_state.fc_answered
+                index=current_index,
+                disabled=st.session_state.fc_answered or has_history
             )
             
             st.write("---")
             
-            if not st.session_state.fc_answered:
-                if st.button("Kiểm tra kết quả 🔍"):
+            # --- KHU VỰC ĐIỀU HƯỚNG NÚT BẤM (BACK - ĐÁP ÁN - NEXT) ---
+            col_b1, col_b2, col_b3 = st.columns([1, 1, 4])
+            
+            # Nút Back luôn hiển thị nếu vị trí > 0
+            if st.session_state.fc_current > 0:
+                if col_b1.button("⬅️ Back"):
+                    st.session_state.fc_current -= 1
+                    # Khi quay lại câu cũ, đưa trạng thái về đã xem lịch sử đáp án
+                    st.session_state.fc_answered = False
+                    st.session_state.fc_choice = None
+                    st.rerun()
+            
+            if not st.session_state.fc_answered and not has_history:
+                if col_b2.button("🔍 Đáp án"):
                     if user_choice is None:
                         st.warning("Vui lòng chọn một đáp án!")
                     else:
                         st.session_state.fc_choice = user_choice
                         st.session_state.fc_answered = True
+                        st.session_state.fc_history_choices[real_idx] = user_choice
+                        
                         if user_choice == correct_ans:
                             st.session_state.fc_score += 1
                         else:
                             if real_idx not in st.session_state.fc_incorrect:
                                 st.session_state.fc_incorrect.append(real_idx)
+                        
+                        # Khắc phục nhược điểm: Lưu tiến độ lên Cloud ngay tại đây
                         save_fc_progress() 
                         st.rerun()
             else:
-                if st.session_state.fc_choice == correct_ans:
-                    st.success(f"✅ **Chính xác!** {correct_ans}")
-                else:
-                    st.error(f"❌ **Sai rồi!** Bạn chọn: {st.session_state.fc_choice}")
-                    st.info(f"💡 **Đáp án đúng là:** {correct_ans}")
-                
-                if st.button("Câu tiếp theo ➡️"):
+                if col_b2.button("Next ➡️"):
                     st.session_state.fc_current += 1
                     st.session_state.fc_answered = False
                     st.session_state.fc_choice = None
+                    # Đồng bộ ngầm việc nhảy chỉ mục câu hỏi
                     save_fc_progress() 
                     st.rerun()
+                    
+            # Hiển thị vùng thông báo kết quả Đúng/Sai sau khi kiểm tra hoặc khi xem lại lịch sử
+            if st.session_state.fc_answered or has_history:
+                active_choice = st.session_state.fc_choice if st.session_state.fc_answered else st.session_state.fc_history_choices[real_idx]
+                if active_choice == correct_ans:
+                    st.success(f"✅ **Chính xác!** {correct_ans}")
+                else:
+                    st.error(f"❌ **Sai rồi!** Bạn chọn: {active_choice}")
+                    st.info(f"💡 **Đáp án đúng là:** {correct_ans}")
 
     # ==========================================
     # HÌNH THỨC 2: THI THỬ 50 CÂU (LƯU VỊ TRÍ)
